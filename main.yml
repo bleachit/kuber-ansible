@@ -1,0 +1,70 @@
+---
+
+- name: Install on all hosts Docker and K8s
+  hosts: all
+  become: yes
+  handlers:
+    - include: ./handlers/main.yml
+  tasks:
+    - name: Install Docker
+      include: docker-install.yml
+    - name: Disable swap
+      include: disable-swap.yml
+    - name: Installing kubeadm, kubelet and kubectl 
+      include: kube-install.yml
+  
+- name: Init Kubernetes on master only
+  hosts: master
+  gather_facts: yes
+  become: yes 
+  tasks:
+    - name: Check if admin.conf file exists.
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: k8s_conf   
+    - name: Initialize the K8s using kubeadm and setting up cidr and adv address 
+      command: kubeadm init --apiserver-advertise-address={{ ansible_ens4.ipv4.address }} --apiserver-cert-extra-sans={{ ansible_ens4.ipv4.address }}  --node-name k8s-master --pod-network-cidr={{ k8s_cidr }}
+      when: k8s_conf.stat.exists == False
+
+- name: Setup kubeconfig for current user
+  hosts: master
+  gather_facts: yes
+  become: no
+  tasks:
+    - name: Check if $HOME/.kube/config file exists.
+      stat:
+        path: $HOME/.kube/config
+      register: home_k8s_conf  
+    - name: Copy the conf file to home kube path and install flannel network
+      shell: "{{ item }}" 
+      args:
+        warn: no
+      with_items:
+      - mkdir -p $HOME/.kube
+      - sudo cp -if /etc/kubernetes/admin.conf $HOME/.kube/config
+      - sudo chown $(id -u):$(id -g) $HOME/.kube/config
+      - kubectl apply -f {{ flannel }}
+      when: home_k8s_conf.stat.exists == False
+    
+    - name: Generate token
+      command: kubeadm token create --print-join-command
+      register: kube_token
+    - set_fact: 
+        nodetoken: "{{ kube_token.stdout }}"
+    - name: Copy token to local file
+      local_action: copy content="{{ kube_token.stdout }}" dest="./kube-token"
+    
+- name: Join all nodes to the cluster
+  hosts: node
+  vars:
+    node_token: "{{ hostvars['master1']['nodetoken']}}"
+  gather_facts: no
+  become: yes
+  tasks:
+    - name: Joining nodes
+      command: "{{ node_token }}"
+      args:
+        creates: /etc/kubernetes/kubelet.conf
+
+
+  

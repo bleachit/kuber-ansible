@@ -1,0 +1,7 @@
+---
+# vars file for k8s
+ansible_ssh_private_key_file: 
+ansible_ssh_user: 
+
+k8s_cidr: 10.244.0.0/16
+flannel: https://raw.githubusercontent.com/coreos/flannel/v0.13.0/Documentation/kube-flannel.yml

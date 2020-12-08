@@ -1,0 +1,8 @@
+---
+# handlers file for k8s
+
+- name: docker start
+  service: name=docker state=started
+
+- name: kubelet restart
+  service: name=kubelet state=restarted
